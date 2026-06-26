@@ -13,11 +13,11 @@
             height: 100vh; 
             margin: 0; 
             overflow: hidden;
-            font-family: 'minecraftia';
+            font-family: 'Minecraftia', Arial, sans-serif;
         }
         @font-face {
-            font-family: 'minecraftia';
-            src: url('./minecraftia.ttf');
+            font-family: 'Minecraftia';
+            src: url('./Minecraftia.ttf');
         }
         canvas {
             max-width: 100%;
@@ -47,7 +47,7 @@
         }
         
         input, button {
-            font-family: 'minecraftia';
+            font-family: 'Minecraftia', Arial, sans-serif;
             box-sizing: border-box;
         }
         
@@ -383,7 +383,7 @@ function drawBoard() {
     ctx.fillStyle = "rgb(240, 240, 240)";
     ctx.fillRect(0, 0, BASE_WIDTH, BASE_HEIGHT);
 
-    ctx.font = `${FONT_SIZE}px "minecraftia", Arial`;
+    ctx.font = `${FONT_SIZE}px "Minecraftia", Arial`;
 
     let bingoCells = new Set();
     let wholeBoardFilled = false;
@@ -466,7 +466,7 @@ function drawBoard() {
     // Draw Big Rainbow BINGO
     if (gameMode === 'solo' && wholeBoardFilled) {
         const bigFontSize = 200;
-        ctx.font = `${bigFontSize}px "minecraftia", Arial`;
+        ctx.font = `${bigFontSize}px "Minecraftia", Arial`;
         const word = "BINGO";
         const rainbowColors = [
             "rgb(255, 0, 0)", "rgb(255, 127, 0)", 
@@ -537,7 +537,7 @@ canvas.addEventListener('click', (event) => {
 // Font Initialization
 (async () => {
     try {
-        await document.fonts.load(`${FONT_SIZE}px "minecraftia"`);
+        await document.fonts.load(`${FONT_SIZE}px "Minecraftia"`);
     } catch (e) {
         console.log("Font fallback");
     }
