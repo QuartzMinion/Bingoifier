@@ -268,8 +268,9 @@ async function startSolo() {
     document.getElementById('hudText').innerText = `Seed: ${seed}`;
     canvas.style.display = 'block';
     
-    await preloadAllImages();
-    drawBoard();
+    drawBoard(); 
+    
+    await preloadAllImages(); 
 }
 
 function hostGame() {
@@ -305,8 +306,9 @@ socket.on('roomJoined', async (data) => {
         document.getElementById('cheatPanel').style.display = 'flex';
     }
 
+    drawBoard(); 
+    
     await preloadAllImages();
-    drawBoard();
 });
 
 socket.on('updateClaim', (data) => {
@@ -354,11 +356,17 @@ function loadImage(src) {
 
 async function preloadAllImages() {
     slotImg = await loadImage('slot.png');
-    for (let item of boardItems) {
+
+    const loadPromises = boardItems.map(async (item) => {
         if (!cachedImages[item.src]) {
             cachedImages[item.src] = await loadImage(item.src);
+            // Optional: drawBoard() here would make items "pop in" one by one
+            drawBoard(); 
         }
-    }
+    });
+
+    // Wait for all of them to finish in parallel
+    await Promise.all(loadPromises);
 }
 
 function wrapText(text, maxWidth, maxLines) {
