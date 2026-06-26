@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Minecraft Bingo</title>
+    <style>
+        body { 
+            background-color: #000; 
+            color: white;
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            height: 100vh; 
+            margin: 0; 
+            overflow: hidden;
+            font-family: 'Minecraftia', Arial, sans-serif;
+        }
+        @font-face {
+            font-family: 'Minecraftia';
+            src: url('minecraftia.ttf');
+        }
+        canvas {
+            max-width: 100%;
+            max-height: 100vh;
+            object-fit: contain;
+            display: none; 
+        }
+        
+        /* Main Menu Styles */
+        #mainMenu {
+            background-color: #222;
+            padding: 40px;
+            border: 4px solid #555;
+            border-radius: 10px;
+            text-align: center;
+            box-shadow: 0 0 20px rgba(0,0,0,0.8);
+        }
+        
+        #mainMenu h1 { margin-top: 0; margin-bottom: 20px; }
+        #mainMenu h2 { margin-top: 0; margin-bottom: 15px; padding-top: 12px;}
+        
+        .menu-section {
+            margin: 20px 0;
+            padding: 20px;
+            background-color: #333;
+            border-radius: 5px;
+        }
+        
+        input, button {
+            font-family: 'Minecraftia', Arial, sans-serif;
+            box-sizing: border-box;
+        }
+        
+        input[type="text"] {
+            padding: 16px 10px 4px 10px; 
+            font-size: 16px;
+            margin-right: 10px;
+            border: none;
+            border-radius: 3px;
+            vertical-align: middle;
+            line-height: 1; 
+        }
+        
+        button {
+            padding: 16px 20px 4px 20px; 
+            font-size: 16px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+            border-radius: 3px;
+            text-shadow: 1px 1px 0 #000;
+            vertical-align: middle;
+        }
+        button:hover { background-color: #45a049; }
+        
+        /* Color Picker Styling */
+        .color-picker-row {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 30px;
+        }
+        .color-picker-row label {
+            font-size: 16px;
+            padding-top: 8px; /* Pushes the "Select Your Color" text down to align with the box */
+        }
+        input[type="color"] {
+            width: 40px;
+            height: 40px;
+            padding: 0;
+            border: 2px solid #fff;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        /* Game HUD Overlay (Transparent & Top-Middle) */
+        #gameHud {
+            position: absolute;
+            top: 0px; 
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 14px; 
+            color: white;
+            background-color: rgba(0, 0, 0, 0.3); /* Transparent */
+            padding: 0px 16px; 
+            border-radius: 0 0 8px 8px; 
+            border: 2px solid rgba(85, 85, 85, 0.5);
+            border-top: none;
+            text-shadow: 1px 1px 0 #000;
+            display: none; 
+            align-items: center;
+            gap: 20px;
+            pointer-events: none; /* Let clicks pass through to the board */
+            z-index: 10;
+        }
+
+        #hudText {
+            padding-top: 12px; /* Pushes the Room Code/Seed text DOWN inside the HUD */
+            padding-bottom: 4px;
+        }
+
+        /* Cheat Box Label */
+        #cheatPanel {
+            display: none; 
+            color: #ff5555; 
+            pointer-events: auto; /* So the host can actually click the checkbox */
+            cursor: pointer;
+            font-size: 14px;
+            align-items: center;
+            gap: 8px;
+            padding-top: 12px; /* Pushes the "Host Cheat" text DOWN to align with the checkbox */
+            padding-bottom: 4px;
+        }
+        #cheatCheckbox {
+            width: 16px;
+            height: 16px;
+            margin: 0;
+            cursor: pointer;
+            transform: translateY(-4.5px); 
+        }
+    </style>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="data.js"></script>
+</head>
+<body>
+
+<!-- Main Menu UI -->
+<div id="mainMenu">
+    <h1>Minecraft Bingo</h1>
+    
+    <div class="menu-section">
+        <h2>Solo</h2>
+        <input type="text" id="soloSeedInput" placeholder="Enter Seed (Optional)">
+        <button onclick="startSolo()">Start Solo</button>
+    </div>
+
+    <div class="menu-section">
+        <h2>Multiplayer</h2>
+        
+        <div class="color-picker-row">
+            <label>Select Your Color:</label>
+            <input type="color" id="playerColorInput" value="#ff0000">
+        </div>
+
+        <button onclick="hostGame()" style="background-color: #2196F3;">Host New Room</button>
+        <hr style="border-color: #555; margin: 20px 0;">
+        <input type="text" id="roomCodeInput" placeholder="Enter Room Code" maxlength="4">
+        <button onclick="joinGame()" style="background-color: #f44336;">Join Room</button>
+    </div>
+</div>
+
+<!-- Game Overlays -->
+<div id="gameHud">
+    <span id="hudText"></span>
+    <label id="cheatPanel">
+        <input type="checkbox" id="cheatCheckbox"> Host Cheat
+    </label>
+</div>
+
+<!-- Canvas -->
+<canvas id="bingoCanvas"></canvas>
+
+<script>
+// === Seeded Random Generator ===
+function xmur3(str) {
+    for(var i = 0, h = 1779033703 ^ str.length; i < str.length; i++) {
+        h = Math.imul(h ^ str.charCodeAt(i), 3432918353);
+        h = h << 13 | h >>> 19;
+    } return function() {
+        h = Math.imul(h ^ (h >>> 16), 2246822507);
+        h = Math.imul(h ^ (h >>> 13), 3266489909);
+        return (h ^= h >>> 16) >>> 0;
+    }
+}
+function mulberry32(a) {
+    return function() {
+      var t = a += 0x6D2B79F5;
+      t = Math.imul(t ^ t >>> 15, t | 1);
+      t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    }
+}
+
+// === Constants ===
+const BOARD_DIM = 5;
+const BASE_WIDTH = 1280;
+const BASE_SLOT_SIZE = 256;
+const TEXT_GAP = 6;
+const LINES_PER_CELL = 2;
+const LINE_SPACING = 2;
+const FONT_SIZE = 20;
+
+const CELL_WIDTH = Math.floor(BASE_WIDTH / BOARD_DIM);
+const LINE_HEIGHT = Math.floor(FONT_SIZE * 1.2); 
+const TEXT_CELL_HEIGHT = (LINE_HEIGHT * LINES_PER_CELL) + (LINE_SPACING * (LINES_PER_CELL - 1));
+const CELL_HEIGHT = BASE_SLOT_SIZE + TEXT_GAP + TEXT_CELL_HEIGHT;
+const BASE_HEIGHT = CELL_HEIGHT * BOARD_DIM;
+
+const canvas = document.getElementById('bingoCanvas');
+const ctx = canvas.getContext('2d');
+canvas.width = BASE_WIDTH;
+canvas.height = BASE_HEIGHT;
+
+// Game State
+let gameMode = null;
+let currentRoomCode = null;
+let boardItems = [];
+let claimedCells = Array(BOARD_DIM).fill().map(() => Array(BOARD_DIM).fill(null)); 
+let myColor = "#ff0000"; 
+let amIHost = false;
+
+let cachedImages = {};
+let slotImg;
+
+const socket = io();
+
+// === Board Generation Logic ===
+function generateSeededBoard(seedString) {
+    const seedGen = xmur3(seedString);
+    const rand = mulberry32(seedGen());
+    let shuffled = [...allItems];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(rand() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    return shuffled.slice(0, BOARD_DIM * BOARD_DIM);
+}
+
+function generateRandomSeed() {
+    return Math.random().toString(36).substring(2, 10);
+}
+
+// === Menu Actions ===
+async function startSolo() {
+    let seed = document.getElementById('soloSeedInput').value.trim();
+    if (!seed) seed = generateRandomSeed();
+
+    myColor = document.getElementById('playerColorInput').value;
+    boardItems = generateSeededBoard(seed);
+    claimedCells = Array(BOARD_DIM).fill().map(() => Array(BOARD_DIM).fill(null));
+    
+    gameMode = 'solo';
+    
+    document.getElementById('mainMenu').style.display = 'none';
+    document.getElementById('gameHud').style.display = 'flex';
+    document.getElementById('hudText').innerText = `Seed: ${seed}`;
+    canvas.style.display = 'block';
+    
+    await preloadAllImages();
+    drawBoard();
+}
+
+function hostGame() {
+    myColor = document.getElementById('playerColorInput').value;
+    const seed = generateRandomSeed();
+    const newBoard = generateSeededBoard(seed);
+    socket.emit('createRoom', { boardItems: newBoard, color: myColor });
+}
+
+function joinGame() {
+    myColor = document.getElementById('playerColorInput').value;
+    const code = document.getElementById('roomCodeInput').value.trim();
+    if (code) {
+        socket.emit('joinRoom', { roomCode: code, color: myColor });
+    }
+}
+
+// === Socket Networking ===
+socket.on('roomJoined', async (data) => {
+    gameMode = 'multiplayer';
+    currentRoomCode = data.roomCode;
+    myColor = data.color;
+    boardItems = data.boardItems;
+    claimedCells = data.claims;
+    amIHost = data.isHost;
+
+    document.getElementById('mainMenu').style.display = 'none';
+    document.getElementById('gameHud').style.display = 'flex';
+    document.getElementById('hudText').innerText = `Room: ${currentRoomCode}`;
+    canvas.style.display = 'block';
+
+    if (amIHost) {
+        document.getElementById('cheatPanel').style.display = 'flex';
+    }
+
+    await preloadAllImages();
+    drawBoard();
+});
+
+socket.on('updateClaim', (data) => {
+    claimedCells[data.row][data.col] = data.color;
+    drawBoard();
+});
+
+socket.on('errorMsg', (msg) => {
+    alert(msg);
+});
+
+// === Check Solo Bingo Lines ===
+function getBingoCells() {
+    let bingoCells = new Set();
+    for (let r = 0; r < BOARD_DIM; r++) {
+        if (claimedCells[r].every(c => c !== null)) {
+            for (let c = 0; c < BOARD_DIM; c++) bingoCells.add(`${r},${c}`);
+        }
+    }
+    for (let c = 0; c < BOARD_DIM; c++) {
+        let colWin = true;
+        for (let r = 0; r < BOARD_DIM; r++) if (claimedCells[r][c] === null) colWin = false;
+        if (colWin) for (let r = 0; r < BOARD_DIM; r++) bingoCells.add(`${r},${c}`);
+    }
+    let diag1Win = true, diag2Win = true;
+    for (let i = 0; i < BOARD_DIM; i++) {
+        if (claimedCells[i][i] === null) diag1Win = false;
+        if (claimedCells[i][BOARD_DIM - 1 - i] === null) diag2Win = false;
+    }
+    if (diag1Win) for(let i=0; i<BOARD_DIM; i++) bingoCells.add(`${i},${i}`);
+    if (diag2Win) for(let i=0; i<BOARD_DIM; i++) bingoCells.add(`${i},${BOARD_DIM - 1 - i}`);
+
+    return bingoCells;
+}
+
+// === Rendering Logic ===
+function loadImage(src) {
+    return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => resolve(document.createElement('canvas')); 
+        img.src = src;
+    });
+}
+
+async function preloadAllImages() {
+    slotImg = await loadImage('slot.png');
+    for (let item of boardItems) {
+        if (!cachedImages[item.src]) {
+            cachedImages[item.src] = await loadImage(item.src);
+        }
+    }
+}
+
+function wrapText(text, maxWidth, maxLines) {
+    const words = text.split(' ');
+    let lines = [];
+    let currentLine = '';
+    for (let word of words) {
+        let testLine = currentLine === '' ? word : currentLine + ' ' + word;
+        let width = ctx.measureText(testLine).width;
+        if (width <= maxWidth) {
+            currentLine = testLine;
+        } else {
+            if (currentLine !== '') lines.push(currentLine);
+            currentLine = word;
+        }
+    }
+    if (currentLine !== '') lines.push(currentLine);
+    return lines.slice(0, maxLines);
+}
+
+function drawBoard() {
+    ctx.fillStyle = "rgb(240, 240, 240)";
+    ctx.fillRect(0, 0, BASE_WIDTH, BASE_HEIGHT);
+
+    ctx.font = `${FONT_SIZE}px "Minecraftia", Arial`;
+
+    let bingoCells = new Set();
+    let wholeBoardFilled = false;
+    
+    if (gameMode === 'solo') {
+        wholeBoardFilled = claimedCells.every(row => row.every(cell => cell !== null));
+        bingoCells = getBingoCells();
+    }
+
+    for (let row = 0; row < BOARD_DIM; row++) {
+        for (let col = 0; col < BOARD_DIM; col++) {
+            const idx = row * BOARD_DIM + col;
+            const item = boardItems[idx];
+            if (!item) continue;
+
+            const x = col * CELL_WIDTH;
+            const y = row * CELL_HEIGHT;
+
+            const slotX = x + Math.floor((CELL_WIDTH - BASE_SLOT_SIZE) / 2);
+            const slotY = y;
+            
+            if (slotImg) {
+                ctx.imageSmoothingEnabled = false;
+                ctx.drawImage(slotImg, slotX, slotY, BASE_SLOT_SIZE, BASE_SLOT_SIZE);
+            }
+
+            const img = cachedImages[item.src];
+            if (img) {
+                const itemSize = Math.floor(BASE_SLOT_SIZE * 0.78);
+                const imgX = slotX + Math.floor((BASE_SLOT_SIZE - itemSize) / 2);
+                const imgY = slotY + Math.floor((BASE_SLOT_SIZE - itemSize) / 2);
+                ctx.imageSmoothingEnabled = false;
+                ctx.drawImage(img, imgX, imgY, itemSize, itemSize);
+            }
+
+            const maxTextWidth = CELL_WIDTH - 20;
+            const lines = wrapText(item.name, maxTextWidth, LINES_PER_CELL);
+            const totalTextHeight = lines.length * LINE_HEIGHT + (lines.length - 1) * LINE_SPACING;
+            
+            const textAreaTop = slotY + BASE_SLOT_SIZE + TEXT_GAP;
+            const textCenterY = textAreaTop + (TEXT_CELL_HEIGHT / 2);
+            const startY = textCenterY - (totalTextHeight / 2) + (LINE_HEIGHT / 2);
+
+            ctx.fillStyle = "rgb(20, 20, 20)";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle"; 
+            
+            // Text offset to counteract the font's internal padding (set to 12 as requested)
+            const ITEM_TEXT_Y_OFFSET = 12; 
+            
+            for (let i = 0; i < lines.length; i++) {
+                const textY = startY + i * (LINE_HEIGHT + LINE_SPACING) + ITEM_TEXT_Y_OFFSET;
+                ctx.fillText(lines[i], x + Math.floor(CELL_WIDTH / 2), textY);
+            }
+
+            // Highlighting Logic
+            if (claimedCells[row][col] !== null) {
+                ctx.save();
+                if (gameMode === 'solo') {
+                    if (wholeBoardFilled) {
+                        ctx.fillStyle = "#ffffff";
+                        ctx.globalAlpha = 0.588;
+                    } else if (bingoCells.has(`${row},${col}`)) {
+                        ctx.fillStyle = "#00ff00";
+                        ctx.globalAlpha = 0.588;
+                    } else {
+                        ctx.fillStyle = claimedCells[row][col];
+                        ctx.globalAlpha = 0.392;
+                    }
+                } else {
+                    ctx.fillStyle = claimedCells[row][col];
+                    ctx.globalAlpha = 0.4;
+                }
+                ctx.fillRect(slotX, slotY, BASE_SLOT_SIZE, BASE_SLOT_SIZE);
+                ctx.restore();
+            }
+        }
+    }
+
+    // Draw Big Rainbow BINGO
+    if (gameMode === 'solo' && wholeBoardFilled) {
+        const bigFontSize = 200;
+        ctx.font = `${bigFontSize}px "Minecraftia", Arial`;
+        const word = "BINGO";
+        const rainbowColors = [
+            "rgb(255, 0, 0)", "rgb(255, 127, 0)", 
+            "rgb(255, 255, 0)", "rgb(0, 255, 0)", "rgb(0, 0, 255)"
+        ];
+        
+        let totalWidth = 0;
+        let charWidths = [];
+        for (let i = 0; i < word.length; i++) {
+            let cw = ctx.measureText(word[i]).width;
+            charWidths.push(cw);
+            totalWidth += cw;
+        }
+        totalWidth += 20 * (word.length - 1);
+
+        let currentX = Math.floor((BASE_WIDTH - totalWidth) / 2);
+        
+        // Exact offset requested for Rainbow BINGO
+        const BINGO_Y_OFFSET = 150; 
+        const textY = Math.floor(BASE_HEIGHT / 2) + BINGO_Y_OFFSET;
+
+        ctx.textAlign = "left";
+        ctx.textBaseline = "middle"; 
+        for (let i = 0; i < word.length; i++) {
+            ctx.fillStyle = rainbowColors[i];
+            ctx.fillText(word[i], currentX, textY);
+            currentX += charWidths[i] + 20;
+        }
+    }
+}
+
+// === Interaction ===
+canvas.addEventListener('click', (event) => {
+    if (!gameMode || boardItems.length === 0) return; 
+
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+
+    const mx = (event.clientX - rect.left) * scaleX;
+    const my = (event.clientY - rect.top) * scaleY;
+
+    const col = Math.floor(mx / CELL_WIDTH);
+    const row = Math.floor(my / CELL_HEIGHT);
+
+    if (row >= 0 && row < BOARD_DIM && col >= 0 && col < BOARD_DIM) {
+        
+        if (gameMode === 'solo') {
+            if (claimedCells[row][col] === null) {
+                claimedCells[row][col] = myColor;
+            } else if (claimedCells[row][col] === myColor) {
+                claimedCells[row][col] = null; 
+            }
+            drawBoard();
+        } 
+        else if (gameMode === 'multiplayer') {
+            const isCheatOn = document.getElementById('cheatCheckbox').checked;
+            
+            if (amIHost && isCheatOn) {
+                socket.emit('cheatCycleCell', { roomCode: currentRoomCode, row, col });
+            } else {
+                socket.emit('claimCell', { roomCode: currentRoomCode, row, col, color: myColor });
+            }
+        }
+    }
+});
+
+// Font Initialization
+(async () => {
+    try {
+        await document.fonts.load(`${FONT_SIZE}px "Minecraftia"`);
+    } catch (e) {
+        console.log("Font fallback");
+    }
+})();
+</script>
+</body>
+</html>
